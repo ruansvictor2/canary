@@ -1,10 +1,10 @@
----
 version: '3.8'
 name: otbr
 services:
   database:
     image: mariadb:latest
     restart: unless-stopped
+    container_name: database
     env_file:
       - '.env'
     networks:
@@ -19,14 +19,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-
-
   server:
-    # cpuset: "0-4"
     build:
       context: ..
-      dockerfile: docker/Dockerfile.dev
-      target: prod
+      dockerfile: docker/Dockerfile.devnobuild
     restart: unless-stopped
     env_file:
       - '.env'
@@ -36,28 +32,42 @@ services:
       - '$gameProtocolPort:$gameProtocolPort'
       - '$statusProtocolPort:$statusProtocolPort'
     volumes:
-      - '../:/srv/canary'
+      - '../:/canary'
+      - '../build/linux-release/bin/canary:/bin/canary'
     depends_on:
       database:
         condition: service_healthy
-
-  login:
-    image: opentibiabr/login-server:latest
-    restart: unless-stopped
-    ports:
-      - '$LOGIN_HTTP_PORT:$LOGIN_HTTP_PORT'
-      - '$LOGIN_GRPC_PORT:$LOGIN_GRPC_PORT'
-    env_file:
-      - '.env'
+  nginx:
+    image: nginx:latest
+    container_name: nginx
     networks:
       - canary-net
+    volumes:
+      - '../:/srv'
+      - '../www/nginx-sample.conf:/etc/nginx/conf.d/default.conf'
+    ports:
+      - 80:80
+      - 443:443
+    restart: unless-stopped
     depends_on:
       database:
         condition: service_healthy
-
+    links:
+      - php-fpm
+      - database
+  php-fpm:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.php
+    container_name: php-fpm
+    networks:
+      - canary-net
+    volumes:
+      - '../:/srv'
+    links:
+      - database
 volumes:
   db-volume:
-
 networks:
   canary-net:
     driver: bridge
